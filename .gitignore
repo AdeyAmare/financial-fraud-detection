@@ -1,5 +1,5 @@
 # Data folder and CSV files
-data/
+/data/
 *.csv
 .ipynb_checkpoints/
 
