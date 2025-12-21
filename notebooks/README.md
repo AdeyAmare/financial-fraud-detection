@@ -1,0 +1,74 @@
+# Fraud Detection Notebooks – Project Overview
+
+This collection of notebooks provides an end-to-end workflow for **fraud detection** using transactional data. The workflow covers raw data exploration, cleaning, geolocation enrichment, feature engineering, and data transformation for machine learning modeling.
+
+## Notebook Workflow
+
+1. **EDA – Initial Exploration**
+   - Load raw fraud or credit card transaction data.
+   - Perform initial data quality checks and cleaning (handling missing values, outliers).
+   - Conduct univariate and bivariate analysis on key features like purchase value, age, devices, and temporal patterns.
+   - Analyze class distribution of fraud vs. legitimate transactions.
+   - Save cleaned datasets for downstream processing.
+
+2. **Geolocation Enrichment**
+   - Merge fraud transactions with IP-to-country mappings.
+   - Validate IP formats and coverage of the mapping dataset.
+   - Analyze country-level fraud patterns, including transaction counts and fraud rates.
+   - Visualize top countries by fraud rate and transaction volume.
+   - Save the geolocation-enriched dataset for feature engineering.
+
+3. **Feature Engineering**
+   - Derive behavioral and temporal features:
+     - Hour of day, day of week
+     - Time since signup
+     - Transaction velocity (per user, last 24h)
+   - Explore relationships between features and fraud risk using plots and correlation analysis.
+   - Visualize fraud trends over time (hourly, daily, weekly).
+   - Save the feature-enhanced dataset for modeling.
+
+4. **Data Transformation & Imbalance Handling**
+   - Split feature-engineered data into training and test sets.
+   - Transform numeric and categorical features as required for modeling.
+   - Handle class imbalance in the training set using SMOTE.
+   - Visualize the effect of resampling on class distribution.
+   - Save the transformed and balanced training dataset for model development.
+
+## Key Goals
+
+- Understand patterns in fraudulent and legitimate transactions.
+- Enrich data with geolocation for more granular risk analysis.
+- Create informative features that improve predictive modeling.
+- Prepare a clean, balanced dataset ready for machine learning.
+
+## Data Output
+
+- `fraud_data_cleaned.csv` – Cleaned raw data  
+- `fraud_data_with_country.csv` – Geolocation-enriched data  
+- `fraud_data_with_features.csv` – Feature-engineered dataset  
+- `fraud_train_smote.csv` – Transformed and SMOTE-balanced training dataset  
+
+## Usage
+
+1. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+    ````
+
+2. **Run notebooks in order**:
+
+   1. `eda_fraud_data.ipynb` and `eda_credit_card.ipynb` – Initial exploration and cleaning
+   2. `ipaddress_to_country.ipynb` – Merge country info
+   3. `feature_engineering.ipynb` – Create behavioral and temporal features
+   4. `data_transformation_imbalance_handling.ipynb` – Transform features, handle imbalance
+
+3. **Use the output datasets** for machine learning model training or further analysis.
+
+4. **Adjust paths** in notebooks if your folder structure differs.
+
+## Notes
+
+* All visualizations are intended for exploratory insight.
+* SMOTE is applied only to the training set to prevent data leakage.
+
+
