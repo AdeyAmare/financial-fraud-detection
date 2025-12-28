@@ -1,6 +1,6 @@
 # Fraud Detection Notebooks – Project Overview
 
-This collection of notebooks provides an end-to-end workflow for **fraud detection** using transactional data. The workflow covers raw data exploration, cleaning, geolocation enrichment, feature engineering, and data transformation for machine learning modeling.
+This collection of notebooks provides an end-to-end workflow for **fraud detection** using transactional data. The workflow covers raw data exploration, cleaning, geolocation enrichment, feature engineering, data transformation, and modeling for machine learning.
 
 ## Notebook Workflow
 
@@ -34,12 +34,23 @@ This collection of notebooks provides an end-to-end workflow for **fraud detecti
    - Visualize the effect of resampling on class distribution.
    - Save the transformed and balanced training dataset for model development.
 
+5. **Modeling**
+   - Train and evaluate classification models using:
+     - Logistic Regression
+     - Random Forest
+   - Perform cross-validation and evaluate metrics such as F1, precision, recall, AUC-PR, and confusion matrix.
+   - Compare model performance and select the best model for fraud detection.
+   - Notebooks:
+     - `modeling_credit_card_data.ipynb` – Modeling workflow for credit card transactions
+     - `modeling_fraud_data.ipynb` – Modeling workflow for fraud transactions
+
 ## Key Goals
 
 - Understand patterns in fraudulent and legitimate transactions.
 - Enrich data with geolocation for more granular risk analysis.
 - Create informative features that improve predictive modeling.
 - Prepare a clean, balanced dataset ready for machine learning.
+- Evaluate models to identify the most effective classifier.
 
 ## Data Output
 
@@ -47,13 +58,14 @@ This collection of notebooks provides an end-to-end workflow for **fraud detecti
 - `fraud_data_with_country.csv` – Geolocation-enriched data  
 - `fraud_data_with_features.csv` – Feature-engineered dataset  
 - `fraud_train_smote.csv` – Transformed and SMOTE-balanced training dataset  
+- Model artifacts and evaluation results are stored as outputs from the modeling notebooks.
 
 ## Usage
 
 1. **Install dependencies**
    ```bash
    pip install -r requirements.txt
-    ````
+````
 
 2. **Run notebooks in order**:
 
@@ -61,8 +73,9 @@ This collection of notebooks provides an end-to-end workflow for **fraud detecti
    2. `ipaddress_to_country.ipynb` – Merge country info
    3. `feature_engineering.ipynb` – Create behavioral and temporal features
    4. `data_transformation_imbalance_handling.ipynb` – Transform features, handle imbalance
+   5. `modeling_credit_card_data.ipynb` and `modeling_fraud_data.ipynb` – Train, evaluate, and select ML models
 
-3. **Use the output datasets** for machine learning model training or further analysis.
+3. **Use the output datasets** for further machine learning or analysis.
 
 4. **Adjust paths** in notebooks if your folder structure differs.
 
@@ -70,5 +83,5 @@ This collection of notebooks provides an end-to-end workflow for **fraud detecti
 
 * All visualizations are intended for exploratory insight.
 * SMOTE is applied only to the training set to prevent data leakage.
-
+* Modeling notebooks rely on feature-engineered and transformed datasets.
 
