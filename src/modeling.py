@@ -1,0 +1,257 @@
+import numpy as np
+import pandas as pd
+import logging
+from typing import List, Tuple, Dict, Any, Optional
+from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.metrics import average_precision_score, f1_score, precision_score, recall_score, confusion_matrix
+from imblearn.over_sampling import SMOTE
+
+
+class ModelingPipeline:
+    """
+    A machine learning pipeline for training, evaluating, and comparing classification models.
+    
+    Supports Logistic Regression and Random Forest with optional SMOTE oversampling. 
+    Handles preprocessing of numeric and categorical features using standard scaling and one-hot encoding.
+    
+    Attributes:
+        df (pd.DataFrame): Input dataset.
+        numeric_features (List[str]): List of numeric feature column names.
+        categorical_features (List[str]): List of categorical feature column names.
+        target_col (str): Name of the target column. Default is 'class'.
+        use_smote (bool): Whether to apply SMOTE oversampling. Default is True.
+        test_size (float): Proportion of the dataset to include in the test split. Default is 0.2.
+        random_state (int): Random seed for reproducibility. Default is 42.
+        preprocessor (ColumnTransformer): Preprocessing pipeline for numeric and categorical features.
+        X_train, X_test, y_train, y_test: Train-test split datasets after preprocessing.
+        results (List[Dict[str, Any]]): Stores metrics for trained models.
+    """
+
+    def __init__(self, 
+                 df: pd.DataFrame, 
+                 numeric_features: List[str], 
+                 categorical_features: List[str],
+                 target_col: str = 'class', 
+                 use_smote: bool = True, 
+                 test_size: float = 0.2, 
+                 random_state: int = 42) -> None:
+        try:
+            if not isinstance(df, pd.DataFrame):
+                raise ValueError("df must be a pandas DataFrame.")
+            if not numeric_features or not isinstance(numeric_features, list):
+                raise ValueError("numeric_features must be a non-empty list of column names.")
+            if not categorical_features or not isinstance(categorical_features, list):
+                raise ValueError("categorical_features must be a non-empty list of column names.")
+            if target_col not in df.columns:
+                raise ValueError(f"Target column '{target_col}' not found in DataFrame.")
+        except Exception as e:
+            logging.error(f"Error in __init__: {e}")
+            raise
+
+        self.df = df
+        self.numeric_features = numeric_features
+        self.categorical_features = categorical_features
+        self.target_col = target_col
+        self.use_smote = use_smote
+        self.test_size = test_size
+        self.random_state = random_state
+
+        self.X_train: Optional[np.ndarray] = None
+        self.X_test: Optional[np.ndarray] = None
+        self.y_train: Optional[pd.Series] = None
+        self.y_test: Optional[pd.Series] = None
+        self.results: List[Dict[str, Any]] = []
+
+        # ColumnTransformer for preprocessing
+        self.preprocessor = ColumnTransformer(
+            transformers=[
+                ("num", StandardScaler(), self.numeric_features),
+                ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), self.categorical_features)
+            ]
+        )
+
+    def prepare_data(self) -> Tuple[np.ndarray, np.ndarray, pd.Series, pd.Series]:
+        """
+        Splits the dataset into training and test sets and applies preprocessing.
+        
+        Returns:
+            Tuple containing (X_train, X_test, y_train, y_test)
+        """
+        try:
+            logging.info("Step 1: Preparing data...")
+            X = self.df[self.numeric_features + self.categorical_features]
+            y = self.df[self.target_col]
+
+            X_train_raw, X_test_raw, y_train, y_test = train_test_split(
+                X, y, stratify=y, test_size=self.test_size, random_state=self.random_state
+            )
+
+            self.X_train = self.preprocessor.fit_transform(X_train_raw)
+            self.X_test = self.preprocessor.transform(X_test_raw)
+            self.y_train = y_train.reset_index(drop=True)
+            self.y_test = y_test.reset_index(drop=True)
+
+            logging.info(f"Training shape: {self.X_train.shape}, Test shape: {self.X_test.shape}")
+            return self.X_train, self.X_test, self.y_train, self.y_test
+        except Exception as e:
+            logging.error(f"Error in prepare_data: {e}")
+            raise
+
+    def evaluate(self, model: Any) -> Dict[str, Any]:
+        """
+        Evaluates a trained model on the test set.
+        
+        Args:
+            model: A trained sklearn-like model with predict and predict_proba methods.
+        
+        Returns:
+            Dictionary of evaluation metrics including AUC-PR, F1, precision, recall, and confusion matrix.
+        """
+        try:
+            y_probs = model.predict_proba(self.X_test)[:, 1]
+            y_preds = model.predict(self.X_test)
+
+            metrics = {
+                "AUC_PR": average_precision_score(self.y_test, y_probs),
+                "F1": f1_score(self.y_test, y_preds),
+                "Precision": precision_score(self.y_test, y_preds),
+                "Recall": recall_score(self.y_test, y_preds),
+                "ConfusionMatrix": confusion_matrix(self.y_test, y_preds)
+            }
+            return metrics
+        except Exception as e:
+            logging.error(f"Error in evaluate: {e}")
+            raise
+
+    def train_logistic_regression(self) -> LogisticRegression:
+        """
+        Trains a Logistic Regression model, optionally using SMOTE oversampling.
+        
+        Returns:
+            Trained LogisticRegression model.
+        """
+        try:
+            model = LogisticRegression(max_iter=1000, random_state=self.random_state, class_weight='balanced')
+            
+            X_res, y_res = self.X_train, self.y_train
+            if self.use_smote:
+                smote = SMOTE(random_state=self.random_state)
+                X_res, y_res = smote.fit_resample(self.X_train, self.y_train)
+
+            model.fit(X_res, y_res)
+            metrics = self.evaluate(model)
+            cv_metrics = self.cross_validate(model)
+
+            self.results.append({"Model": "Logistic Regression", **metrics, **cv_metrics})
+            return model
+        except Exception as e:
+            logging.error(f"Error in train_logistic_regression: {e}")
+            raise
+
+    def train_random_forest(self) -> RandomForestClassifier:
+        """
+        Trains a Random Forest model, optionally using SMOTE oversampling.
+        
+        Returns:
+            Trained RandomForestClassifier model.
+        """
+        try:
+            model = RandomForestClassifier(
+                n_estimators=100, random_state=self.random_state, n_jobs=-1, max_depth=10
+            )
+            
+            X_res, y_res = self.X_train, self.y_train
+            if self.use_smote:
+                smote = SMOTE(random_state=self.random_state)
+                X_res, y_res = smote.fit_resample(self.X_train, self.y_train)
+
+            model.fit(X_res, y_res)
+            metrics = self.evaluate(model)
+            cv_metrics = self.cross_validate(model)
+            self.results.append({"Model": "Random Forest", **metrics, **cv_metrics})
+            return model
+        except Exception as e:
+            logging.error(f"Error in train_random_forest: {e}")
+            raise
+
+    def cross_validate(self, model: Any, n_splits: int = 5) -> Dict[str, float]:
+        """
+        Performs Stratified K-Fold cross-validation on the entire dataset.
+        
+        Args:
+            model: An sklearn-like model to evaluate.
+            n_splits: Number of CV folds. Default is 5.
+        
+        Returns:
+            Dictionary containing mean F1 and mean AUC-PR scores across folds.
+        """
+        try:
+            logging.info(f"Running Stratified {n_splits}-Fold CV...")
+            X = self.df[self.numeric_features + self.categorical_features]
+            y = self.df[self.target_col]
+            skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=self.random_state)
+
+            f1_scores, auc_pr_scores = [], []
+
+            for train_idx, val_idx in skf.split(X, y):
+                X_train_fold_raw, X_val_fold_raw = X.iloc[train_idx], X.iloc[val_idx]
+                y_train_fold, y_val_fold = y.iloc[train_idx], y.iloc[val_idx]
+
+                X_train_fold = self.preprocessor.transform(X_train_fold_raw)
+                X_val_fold = self.preprocessor.transform(X_val_fold_raw)
+
+                if self.use_smote:
+                    smote = SMOTE(random_state=self.random_state)
+                    X_train_fold, y_train_fold = smote.fit_resample(X_train_fold, y_train_fold)
+
+                model.fit(X_train_fold, y_train_fold)
+                y_probs = model.predict_proba(X_val_fold)[:, 1]
+                y_preds = model.predict(X_val_fold)
+
+                f1_scores.append(f1_score(y_val_fold, y_preds))
+                auc_pr_scores.append(average_precision_score(y_val_fold, y_probs))
+
+            return {"F1_mean": float(np.mean(f1_scores)), "AUC_PR_mean": float(np.mean(auc_pr_scores))}
+        except Exception as e:
+            logging.error(f"Error in cross_validate: {e}")
+            raise
+
+    def compare_models(self) -> pd.DataFrame:
+        """
+        Compares trained models based on their evaluation metrics.
+        
+        Returns:
+            DataFrame sorted by AUC-PR in descending order.
+        """
+        try:
+            logging.info("Step 6: Comparing models...")
+            df_results = pd.DataFrame(self.results)
+            return df_results.sort_values(by="AUC_PR", ascending=False).reset_index(drop=True)
+        except Exception as e:
+            logging.error(f"Error in compare_models: {e}")
+            raise
+
+    def select_best_model(self) -> Tuple[pd.Series, str]:
+        """
+        Selects the best model based on AUC-PR and provides a justification.
+        
+        Returns:
+            Tuple of (best model metrics as Series, justification string)
+        """
+        try:
+            comparison = self.compare_models()
+            best = comparison.iloc[0]
+            justification = (
+                f"{best['Model']} selected due to highest AUC-PR "
+                f"({best['AUC_PR']:.3f}) and strong recall, prioritizing "
+                f"undetected fraud reduction while maintaining interpretability."
+            )
+            logging.info(justification)
+            return best, justification
+        except Exception as e:
+            logging.error(f"Error in select_best_model: {e}")
+            raise
