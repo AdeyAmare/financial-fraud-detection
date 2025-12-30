@@ -120,6 +120,60 @@ save_dataframe(features_df, "data/processed/fraud_data_with_features.csv")
 
 ---
 
+## 6️⃣ Model Explainability (`explainability.py`)
+
+Provides the **`ModelExplainability`** class for interpreting trained fraud detection models using **SHAP (SHapley Additive exPlanations)**.
+
+This module is designed to work with **saved models and preprocessors**, enabling post-hoc explainability in separate notebooks without retraining.
+
+### Key Capabilities
+
+* **Built-in Feature Importance**
+  - Visualizes top features using model-native importance (e.g., Random Forest).
+
+* **Global Explainability (SHAP Summary Plot)**
+  - Identifies which features most influence fraud predictions across the dataset.
+  - Supports both tree-based and model-agnostic SHAP explainers.
+
+* **Local Explainability (SHAP Force Plots)**
+  - Generates instance-level explanations for:
+    - **True Positives (TP)** – correctly identified fraud
+    - **False Positives (FP)** – legitimate transactions flagged as fraud
+    - **False Negatives (FN)** – missed fraud cases
+  - Handles common SHAP dimension mismatches safely.
+
+* **Top Fraud Drivers**
+  - Extracts the most influential features using **mean absolute SHAP values**.
+  - Useful for business interpretation and risk policy recommendations.
+
+### Usage Example
+
+```python
+from src.explainability import ModelExplainability
+
+explainer = ModelExplainability(
+    model_path="models/fraud_model.joblib",
+    preprocessor_path="models/preprocessor.joblib",
+    X=X_test,
+    y=y_test
+)
+
+# Built-in feature importance
+explainer.plot_builtin_feature_importance(top_n=10)
+
+# Global SHAP summary
+explainer.plot_shap_summary()
+
+# Local explanations
+explainer.plot_force_plot_for_case("TP")
+explainer.plot_force_plot_for_case("FP")
+explainer.plot_force_plot_for_case("FN")
+
+# Top fraud drivers
+top_features = explainer.get_top_drivers(top_n=5)
+```
+---
+
 ## Notes
 
 * All modules use **logging** to track progress and issues.

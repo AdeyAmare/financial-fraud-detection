@@ -46,6 +46,28 @@ The notebooks provide an **end-to-end reproducible workflow**:
    - Random Forest  
    Metrics include F1, precision, recall, AUC-PR, and confusion matrix.
 
+Here’s a **short, clean README-ready version** 👇
+
+---
+
+6. **Model Explainability**
+
+The project includes a **SHAP-based explainability module** (`src/explainability.py`) to interpret fraud model predictions at both **global** and **individual transaction** levels.
+
+**Supported explainability features:**
+
+* **Built-in feature importance** for tree-based models
+* **Global SHAP summary plots** to identify the main drivers of fraud
+* **Instance-level SHAP force plots** for:
+
+  * True Positives (TP)
+  * False Positives (FP)
+  * False Negatives (FN)
+* **Top SHAP feature drivers** ranked by mean absolute contribution
+
+Explainability is performed **after preprocessing** using the saved pipeline to ensure consistency with model inputs. These insights improve **model transparency, debugging, and trust**, and help stakeholders understand *why* transactions are flagged as fraudulent.
+
+
 **Notebook Order:**  
 See the [Notebooks README](./notebooks/README.md) for details, usage instructions, and visualization outputs.
 
