@@ -4,7 +4,7 @@ import numpy as np
 from pathlib import Path
 from src.data.cleaner import TransactionDataCleaner
 from src.data.loader import FraudDataLoader, CreditCardDataLoader, IPCountryLoader
-from src.data.merger import GeoDataMerger
+from src.data.merger import GeoDataMerger, ip_to_int
 
 # -----------------------------
 # TransactionDataCleaner tests
@@ -45,7 +45,8 @@ def test_handle_missing_values_fill_zero(sample_df):
 def test_correct_dtypes(sample_df):
     cleaner = TransactionDataCleaner(sample_df)
     df_corrected = cleaner.correct_dtypes()
-    assert df_corrected["age"].dtype == int
+    # Use is_integer_dtype to handle both int64 and Int64
+    assert pd.api.types.is_integer_dtype(df_corrected["age"])
 
 # -----------------------------
 # FraudDataLoader / CreditCardDataLoader / IPCountryLoader tests
@@ -66,7 +67,6 @@ def test_fraud_data_loader(tmp_path, fraud_csv_data):
 
 @pytest.fixture
 def credit_csv_data():
-    # Minimal V1-V3 for testing; normally there are V1-V28
     return """Time,V1,V2,V3,Amount,Class
 0,0.1,0.2,0.3,100,0
 60,0.4,0.5,0.6,200,1"""
@@ -106,9 +106,9 @@ def ip_df():
         "country": ["USA", "CAN"]
     })
 
-def test_ip_to_int_and_series(transactions_df):
-    merger = GeoDataMerger(transactions_df, pd.DataFrame())
-    assert merger.ip_to_int("1.2.3.4") == 16909060
+def test_ip_to_int_and_series(transactions_df, ip_df):
+    merger = GeoDataMerger(transactions_df, ip_df)
+    assert ip_to_int("1.2.3.4") == 16909060
     series_int = merger.ip_series_to_int(transactions_df["ip_address"])
     assert all(isinstance(x, (int, np.integer)) for x in series_int)
 
