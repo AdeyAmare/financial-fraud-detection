@@ -160,3 +160,5 @@ pytest tests/
 * All visualizations are exploratory and intended for insight into fraud patterns.
 * Modeling notebooks rely on feature-engineered and transformed datasets.
 
+
+[![CI](https://github.com/AdeyAmare/financial-fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/AdeyAmare/financial-fraud-detection/actions/workflows/ci.yml)
