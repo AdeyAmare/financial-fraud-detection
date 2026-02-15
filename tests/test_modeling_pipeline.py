@@ -1,7 +1,7 @@
 import pytest
 import pandas as pd
 import numpy as np
-from src.modeling import ModelingPipeline  
+from src.modeling import ModelingPipeline , PipelineConfig 
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -18,12 +18,18 @@ def sample_data():
     return data
 
 def test_pipeline_runs(sample_data):
+
+    config = PipelineConfig(
+    numeric_features=["num1", "num2"],
+    categorical_features=["cat1"],
+    target_col="class",
+    use_smote=True
+    )
+
+
     pipeline = ModelingPipeline(
         df=sample_data,
-        numeric_features=["num1", "num2"],
-        categorical_features=["cat1"],
-        target_col="class",
-        use_smote=True
+        config=config
     )
     
     # Test data preparation
@@ -32,7 +38,7 @@ def test_pipeline_runs(sample_data):
     assert X_test.shape[0] > 0
     
     # Test training Logistic Regression
-    lr_model = pipeline.train_logistic_regression()
+    lr_model = pipeline.tune_and_train_logistic_regression()
     assert lr_model is not None
     assert len(pipeline.results) > 0
 
