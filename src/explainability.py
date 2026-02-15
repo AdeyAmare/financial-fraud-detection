@@ -1,23 +1,79 @@
 import joblib
 import logging
+from dataclasses import dataclass
+from typing import Optional, Union
+
 import numpy as np
 import pandas as pd
 import shap
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
-from typing import Optional
+
+# ----------------------------
+# Constants
+# ----------------------------
+DEFAULT_TOP_N = 10
+DEFAULT_SAMPLE_SIZE = 500
+SHAP_BACKGROUND_SIZE = 100
+RANDOM_STATE = 42
+VALID_CASE_TYPES = {"TP", "FP", "FN"}
 
 # Ensure JavaScript is initialized for SHAP plots in Notebooks
 shap.initjs()
 
 # ----------------------------
-# Logging configuration
+# Centralized logging
 # ----------------------------
+logger = logging.getLogger(__name__)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+# ----------------------------
+# Data classes for configuration
+# ----------------------------
+@dataclass(frozen=True)
+class ExplainabilityConfig:
+    top_n: int = DEFAULT_TOP_N
+    sample_size: int = DEFAULT_SAMPLE_SIZE
+    shap_background_size: int = SHAP_BACKGROUND_SIZE
+    random_state: int = RANDOM_STATE
+
+# ----------------------------
+# Utility functions
+# ----------------------------
+def sample_array(X: np.ndarray, sample_size: int, random_state: int) -> np.ndarray:
+    if X.shape[0] > sample_size:
+        return shap.sample(X, sample_size, random_state=random_state)
+    return X
+
+def flatten_instance(X_instance: Union[np.ndarray, object]) -> np.ndarray:
+    if hasattr(X_instance, "toarray"):
+        return X_instance.toarray().flatten()
+    return np.array(X_instance).flatten()
+
+def select_indices_by_case(y_true: np.ndarray, y_pred: np.ndarray, case_type: str) -> np.ndarray:
+    if case_type == "TP":
+        return np.where((y_true == 1) & (y_pred == 1))[0]
+    if case_type == "FP":
+        return np.where((y_true == 0) & (y_pred == 1))[0]
+    if case_type == "FN":
+        return np.where((y_true == 1) & (y_pred == 0))[0]
+    return np.array([])
+
+def extract_shap_array(shap_values: np.ndarray) -> np.ndarray:
+    if hasattr(shap_values, "values"):
+        arr = shap_values.values
+    else:
+        arr = shap_values
+    if len(arr.shape) == 3:  # multiclass SHAP
+        arr = arr[:, :, 1]
+    return np.ravel(arr)
+
+# ----------------------------
+# Main Explainability Class
+# ----------------------------
 class ModelExplainability:
     """
     ModelExplainability provides SHAP-based interpretability utilities
@@ -42,7 +98,8 @@ class ModelExplainability:
         model_path: str,
         preprocessor_path: str,
         X: pd.DataFrame,
-        y: pd.Series
+        y: Union[pd.Series, pd.DataFrame],
+        config: ExplainabilityConfig = ExplainabilityConfig()
     ):
         """
         Initialize the explainability module.
@@ -65,7 +122,7 @@ class ModelExplainability:
         RuntimeError
             If model or preprocessor loading fails.
         """
-        logging.info("Initializing ModelExplainability")
+        logger.info("Initializing ModelExplainability")
 
         if not isinstance(X, pd.DataFrame):
             raise TypeError("X must be a pandas DataFrame")
@@ -76,26 +133,27 @@ class ModelExplainability:
             self.model = joblib.load(model_path)
             self.preprocessor = joblib.load(preprocessor_path)
         except Exception as e:
-            logging.error("Failed to load model or preprocessor", exc_info=True)
+            logger.error("Failed to load model or preprocessor", exc_info=True)
             raise RuntimeError("Model or preprocessor loading failed") from e
 
-        self.X_raw = X.copy()
-        self.y = y.reset_index(drop=True)
+        self.X_raw: pd.DataFrame = X.copy()
+        self.y: pd.Series = y.reset_index(drop=True)
+        self.config: ExplainabilityConfig = config
 
         try:
-            self.X = self.preprocessor.transform(X)
-            self.feature_names = self.preprocessor.get_feature_names_out()
+            self.X: np.ndarray = self.preprocessor.transform(X)
+            self.feature_names: np.ndarray = self.preprocessor.get_feature_names_out()
         except Exception as e:
-            logging.error("Preprocessing failed", exc_info=True)
+            logger.error("Preprocessing failed", exc_info=True)
             raise RuntimeError("Error during feature preprocessing") from e
 
         try:
-            self.predictions = self.model.predict(self.X)
+            self.predictions: np.ndarray = self.model.predict(self.X)
         except Exception as e:
-            logging.error("Prediction failed", exc_info=True)
+            logger.error("Prediction failed", exc_info=True)
             raise RuntimeError("Model prediction failed") from e
 
-        self.probabilities = (
+        self.probabilities: Optional[np.ndarray] = (
             self.model.predict_proba(self.X)[:, 1]
             if hasattr(self.model, "predict_proba")
             else None
@@ -105,9 +163,9 @@ class ModelExplainability:
         self.shap_values: Optional[np.ndarray] = None
         self.X_shap: Optional[np.ndarray] = None
 
-        logging.info("ModelExplainability initialized successfully")
+        logger.info("ModelExplainability initialized successfully")
 
-    def plot_builtin_feature_importance(self, top_n: int = 10):
+    def plot_builtin_feature_importance(self, top_n: int = DEFAULT_TOP_N) -> Optional[pd.DataFrame]:
         """
         Plot built-in feature importances for tree-based models.
 
@@ -122,28 +180,21 @@ class ModelExplainability:
             DataFrame of top features if supported, otherwise None.
         """
         if not hasattr(self.model, "feature_importances_"):
-            logging.warning("Model does not support built-in feature importance")
+            logger.warning("Model does not support built-in feature importance")
             return None
 
         importances = self.model.feature_importances_
-
         if len(importances) != len(self.feature_names):
-            logging.warning("Feature importance and feature name length mismatch")
+            logger.warning("Feature importance and feature name length mismatch")
 
         importance_df = (
-            pd.DataFrame({
-                "feature": self.feature_names,
-                "importance": importances
-            })
+            pd.DataFrame({"feature": self.feature_names, "importance": importances})
             .sort_values(by="importance", ascending=False)
             .head(top_n)
         )
 
         plt.figure(figsize=(8, 6))
-        plt.barh(
-            importance_df["feature"][::-1],
-            importance_df["importance"][::-1]
-        )
+        plt.barh(importance_df["feature"][::-1], importance_df["importance"][::-1])
         plt.xlabel("Importance")
         plt.title(f"Top {top_n} Feature Importances (Built-in)")
         plt.tight_layout()
@@ -151,7 +202,7 @@ class ModelExplainability:
 
         return importance_df
 
-    def compute_shap_values(self, sample_size: int = 500):
+    def compute_shap_values(self, sample_size: int = DEFAULT_SAMPLE_SIZE) -> None:
         """
         Compute SHAP values for the model.
 
@@ -160,36 +211,31 @@ class ModelExplainability:
         sample_size : int, default=500
             Maximum number of samples used for SHAP computation.
         """
-        logging.info("Computing SHAP values")
+        logger.info("Computing SHAP values")
 
         if not isinstance(sample_size, int) or sample_size <= 0:
             raise ValueError("sample_size must be a positive integer")
 
         try:
-            if self.X.shape[0] > sample_size:
-                self.X_shap = shap.sample(
-                    self.X, sample_size, random_state=42
-                )
-            else:
-                self.X_shap = self.X
+            self.X_shap = sample_array(self.X, sample_size, self.config.random_state)
 
             if hasattr(self.model, "estimators_"):
-                logging.info("Using TreeExplainer")
+                logger.info("Using TreeExplainer")
                 self.explainer = shap.TreeExplainer(self.model)
                 self.shap_values = self.explainer.shap_values(self.X_shap)
                 if isinstance(self.shap_values, list):
                     self.shap_values = self.shap_values[1]
             else:
-                logging.info("Using model-agnostic SHAP Explainer")
-                background = shap.sample(self.X, 100, random_state=42)
+                logger.info("Using model-agnostic SHAP Explainer")
+                background = shap.sample(self.X, self.config.shap_background_size, random_state=self.config.random_state)
                 self.explainer = shap.Explainer(self.model, background)
                 self.shap_values = self.explainer(self.X_shap)
 
         except Exception as e:
-            logging.error("SHAP computation failed", exc_info=True)
+            logger.error("SHAP computation failed", exc_info=True)
             raise RuntimeError("Error during SHAP computation") from e
 
-    def plot_shap_summary(self, max_display: int = 20):
+    def plot_shap_summary(self, max_display: int = 20) -> None:
         """
         Plot global SHAP summary plot.
 
@@ -227,35 +273,20 @@ class ModelExplainability:
         -------
         shap.plots._force.AdditiveForceVisualizer or None
         """
-        logging.info(f"Generating force plot for case: {case_type}")
+        logger.info(f"Generating force plot for case: {case_type}")
 
-        if case_type not in {"TP", "FP", "FN"}:
-            raise ValueError("case_type must be one of ['TP', 'FP', 'FN']")
+        if case_type not in VALID_CASE_TYPES:
+            raise ValueError(f"case_type must be one of {VALID_CASE_TYPES}")
 
         y_true, y_pred = self.y.values, self.predictions
-
-        if case_type == "TP":
-            idx_list = np.where((y_true == 1) & (y_pred == 1))[0]
-        elif case_type == "FP":
-            idx_list = np.where((y_true == 0) & (y_pred == 1))[0]
-        else:
-            idx_list = np.where((y_true == 1) & (y_pred == 0))[0]
+        idx_list = select_indices_by_case(y_true, y_pred, case_type)
 
         if len(idx_list) == 0:
-            logging.warning(f"No samples found for {case_type}")
+            logger.warning(f"No samples found for {case_type}")
             return None
 
         idx = idx_list[0]
-
-        try:
-            X_instance = self.X[idx]
-            if hasattr(X_instance, "toarray"):
-                X_instance = X_instance.toarray().flatten()
-            else:
-                X_instance = np.array(X_instance).flatten()
-        except Exception as e:
-            logging.error("Failed to extract instance features", exc_info=True)
-            raise RuntimeError("Feature extraction for force plot failed") from e
+        X_instance = flatten_instance(self.X[idx])
 
         try:
             if hasattr(self.model, "estimators_") or "XGB" in str(type(self.model)):
@@ -272,7 +303,7 @@ class ModelExplainability:
                     shap_vals = raw_vals.flatten()
                     base_val = explainer.expected_value
             else:
-                background = shap.sample(self.X, 100, random_state=42)
+                background = shap.sample(self.X, self.config.shap_background_size, random_state=self.config.random_state)
                 explainer = shap.Explainer(self.model, background)
                 shap_exp = explainer(self.X[idx:idx + 1])
 
@@ -284,11 +315,11 @@ class ModelExplainability:
                     base_val = shap_exp.base_values[0]
 
         except Exception as e:
-            logging.error("SHAP force plot computation failed", exc_info=True)
+            logger.error("SHAP force plot computation failed", exc_info=True)
             raise RuntimeError("Force plot SHAP computation failed") from e
 
         if len(shap_vals) == 2 * len(X_instance):
-            logging.warning("Detected interleaved SHAP values, correcting dimensions")
+            logger.warning("Detected interleaved SHAP values, correcting dimensions")
             shap_vals = shap_vals[len(X_instance):]
 
         return shap.force_plot(
@@ -298,7 +329,7 @@ class ModelExplainability:
             feature_names=self.feature_names
         )
 
-    def get_top_drivers(self, top_n: int = 5):
+    def get_top_drivers(self, top_n: int = 5) -> pd.DataFrame:
         """
         Retrieve top SHAP feature drivers by mean absolute contribution.
 
@@ -315,24 +346,28 @@ class ModelExplainability:
         if self.shap_values is None:
             self.compute_shap_values()
 
-        shap_array = (
-            self.shap_values.values
-            if hasattr(self.shap_values, "values")
-            else self.shap_values
-        )
+        # Ensure shap_array is 2D (samples x features)
+        if hasattr(self.shap_values, "values"):
+            shap_array = self.shap_values.values
+        else:
+            shap_array = self.shap_values
 
+        # If multiclass, take positive class
         if len(shap_array.shape) == 3:
-            logging.info("Detected 3D SHAP array, selecting positive class (index 1)")
             shap_array = shap_array[:, :, 1]
 
+        # Compute mean absolute shap for each feature
         mean_abs_shap = np.abs(shap_array).mean(axis=0)
-        mean_abs_shap = np.ravel(mean_abs_shap)
+
+        # Ensure feature count matches
+        if mean_abs_shap.shape[0] != len(self.feature_names):
+            raise ValueError(
+                f"Number of SHAP feature values ({mean_abs_shap.shape[0]}) "
+                f"does not match number of features ({len(self.feature_names)})."
+            )
 
         return (
-            pd.DataFrame({
-                "feature": self.feature_names,
-                "mean_abs_shap": mean_abs_shap
-            })
+            pd.DataFrame({"feature": self.feature_names, "mean_abs_shap": mean_abs_shap})
             .sort_values(by="mean_abs_shap", ascending=False)
             .head(top_n)
         )
