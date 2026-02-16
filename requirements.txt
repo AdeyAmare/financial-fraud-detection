@@ -12,3 +12,4 @@ xgboost
 lightgbm
 streamlit
 plotly
+shap
