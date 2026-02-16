@@ -1,146 +1,337 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import tempfile
+import shap
+import os
+import sys
 from pathlib import Path
 
-import sys
-
-# Import your functional classes
-
-sys.path.append(str(Path(__file__).resolve().parent.parent / "src"))
+# -----------------------------
+# PATH SETUP
+# -----------------------------
 sys.path.append(str(Path(__file__).resolve().parent.parent))
-
-# Import your custom classes
-from src.data.loader import FraudDataLoader
+from src.data.loader import FraudDataLoader, IPCountryLoader
 from src.data.cleaner import TransactionDataCleaner
-from src.feature_engineering import FraudFeatureEngineer, FraudFeatureConfig
+from src.data.merger import GeoDataMerger
+from src.feature_engineering import FraudFeatureEngineer
 from src.modeling import ModelingPipeline, PipelineConfig
-from src.explainability import ModelExplainability, ExplainabilityConfig
 
+# -----------------------------
+# PAGE CONFIG
+# -----------------------------
+st.set_page_config(
+    page_title="Fraud Risk Dashboard",
+    page_icon="🛡️",
+    layout="wide"
+)
 
-# Page setup
-st.set_page_config(page_title="Fraud Risk Executive Dashboard", layout="wide")
+st.title("🛡️ Fraud Risk & Insights Dashboard")
+st.write("Explore transactions, detect risky activity, and understand why some transactions may be risky. Everything is shown in plain language.")
 
-# Custom styling for a professional look
-st.markdown("""
-    <style>
-    .main { background-color: #f8f9fa; }
-    div[data-testid="metric-container"] {
-        background-color: #ffffff;
-        border: 1px solid #dee2e6;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# -----------------------------
+# SIDEBAR UPLOAD
+# -----------------------------
+st.sidebar.header("Upload Your Data")
+uploaded_txn = st.sidebar.file_uploader("Transaction Data (.csv)", type="csv")
+uploaded_ip = st.sidebar.file_uploader("IP to Country Mapping (.csv)", type="csv")
 
-st.title("🛡️ Fraud Risk & Revenue Protection")
-st.subheader("Executive Insights & Decision Support")
+# -----------------------------
+# MAIN LOGIC
+# -----------------------------
+if uploaded_txn and uploaded_ip:
+    try:
+        # Save uploaded files temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as t1, \
+             tempfile.NamedTemporaryFile(delete=False, suffix=".csv") as t2:
+            t1.write(uploaded_txn.getbuffer())
+            t2.write(uploaded_ip.getbuffer())
+            txn_path, ip_path = t1.name, t2.name
 
-# --- SIDEBAR: DATA UPLOAD ---
-st.sidebar.header("📁 Data Management")
-uploaded_file = st.sidebar.file_uploader("Upload Latest Transaction Data", type=["csv"])
+        with st.spinner("Preparing your data…"):
+            df_raw = FraudDataLoader(txn_path).load()
+            ip_map = IPCountryLoader(ip_path).load()
+            df_clean = TransactionDataCleaner(df_raw).clean()
+            df_geo = GeoDataMerger(df_clean, ip_map).merge_country()
 
-if uploaded_file:
-    # 1. Processing Pipeline (Functional & Silent)
-    with open("temp_data.csv", "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    
-    # Load and Clean
-    df_raw = FraudDataLoader("temp_data.csv").load()
-    df_cleaned = TransactionDataCleaner(df_raw).clean(missing_strategy="drop")
-    
-    # Feature Engineering
-    engineer = FraudFeatureEngineer(df_cleaned)
-    engineer.add_time_features().add_transaction_velocity()
-    df = engineer.get_features()
+            engineer = FraudFeatureEngineer(df_geo)
+            engineer.add_time_features() \
+                    .add_time_since_signup() \
+                    .add_transaction_velocity()
+            df = engineer.get_features()
 
-    # --- SECTION 1: KEY METRICS ---
-    fraud_count = df['class'].sum()
-    fraud_rate = (fraud_count / len(df)) * 100
-    total_volume = df['purchase_value'].sum()
-    at_risk_value = df[df['class'] == 1]['purchase_value'].sum()
+        # -----------------------------
+        # KEY METRICS
+        # -----------------------------
+        st.subheader("Summary Metrics")
+        total_txns = len(df)
+        fraud_txns = int(df["class"].sum())
+        fraud_rate = fraud_txns / total_txns if total_txns else 0
+        total_money = df["purchase_value"].sum()
+        money_at_risk = df[df["class"] == 1]["purchase_value"].sum()
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Transactions", f"{len(df):,}")
-    col2.metric("Detected Fraud Rate", f"{fraud_rate:.2f}%", delta="-0.15% vs Last Period")
-    col3.metric("Total Volume", f"${total_volume/1e6:.2f}M")
-    col4.metric("At-Risk Revenue", f"${at_risk_value/1e3:.1f}K", delta_color="inverse")
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Total Transactions", f"{total_txns:,}")
+        k2.metric("Potential Risky Transactions", f"{fraud_txns:,}", f"{fraud_rate:.1%}")
+        k3.metric("Total Money Involved", f"${total_money/1e6:.2f}M")
+        k4.metric("Money at Risk", f"${money_at_risk/1e3:.1f}K", delta_color="inverse")
 
-    # --- SECTION 2: BUSINESS IMPACT & VISUALIZATIONS ---
-    tab1, tab2, tab3 = st.tabs(["💰 Business Impact", "🔍 Risk Patterns", "🤖 AI Performance"])
+        # -----------------------------
+        # TABS
+        # -----------------------------
+        tab_eda, tab_model, tab_explain = st.tabs([
+            "📊 Explore Data",
+            "🤖 Fraud Detection",
+            "🔍 Why Transactions Are Risky"
+        ])
 
-    with tab1:
-        st.subheader("Revenue vs. Loss Analysis")
-        # Donut chart for revenue split
-        impact_data = pd.DataFrame({
-            'Category': ['Safe Revenue', 'Blocked Fraud'],
-            'Value': [total_volume - at_risk_value, at_risk_value]
-        })
-        fig_impact = px.pie(impact_data, values='Value', names='Category', 
-                           hole=0.6, color_discrete_sequence=['#2ecc71', '#e74c3c'])
-        st.plotly_chart(fig_impact, use_container_width=True)
+        # =============================
+        # EDA
+        # =============================
+        with tab_eda:
+            st.subheader("Explore Transactions in Simple Terms")
+            st.plotly_chart(px.pie(
+                df,
+                names=df["class"].map({0: "Safe", 1: "Risky"}),
+                title="Proportion of Safe vs Risky Transactions",
+                hole=0.4
+            ), use_container_width=True)
 
-    with tab2:
-        st.subheader("Where and When is Risk Occurring?")
-        c1, c2 = st.columns(2)
-        
-        with c1:
-            # Hourly risk pattern
-            hourly = df.groupby('hour_of_day')['class'].mean().reset_index()
-            fig_hour = px.line(hourly, x='hour_of_day', y='class', 
-                              title="Risk Probability by Hour",
-                              labels={'class': 'Risk Level', 'hour_of_day': 'Hour of Day'})
-            fig_hour.update_traces(line_color='#e74c3c')
-            st.plotly_chart(fig_hour, use_container_width=True)
-            
-        with c2:
-            # Source of traffic risk
-            source_risk = df.groupby('source')['class'].mean().reset_index()
-            fig_source = px.bar(source_risk, x='source', y='class', 
-                               title="Risk by Marketing Channel",
-                               color='class', color_continuous_scale='Reds')
-            st.plotly_chart(fig_source, use_container_width=True)
+            st.plotly_chart(px.histogram(
+                df,
+                x="purchase_value",
+                color=df["class"].map({0: "Safe", 1: "Risky"}),
+                nbins=50,
+                title="Transaction Amounts by Safety",
+                labels={"color": "Transaction Type"}
+            ), use_container_width=True)
 
-    with tab3:
-        st.subheader("AI Detection Drivers")
-        # Run modeling pipeline
-        config = PipelineConfig(
-            numeric_features=['purchase_value', 'age', 'transactions_per_user', 'transactions_last_24h'],
-            categorical_features=['source', 'browser']
-        )
-        pipeline = ModelingPipeline(df, config)
-        pipeline.prepare_data()
-        
-        with st.spinner("Analyzing data patterns..."):
-            model = pipeline.train_random_forest()
-        
-        # Display Feature Importance (Stakeholder friendly)
-        importances = pd.Series(model.feature_importances_, 
-                               index=pipeline.preprocessor.get_feature_names_out())
-        top_drivers = importances.sort_values(ascending=True).tail(10)
-        
-        fig_drivers = px.bar(x=top_drivers.values, y=top_drivers.index, orientation='h',
-                            title="Top 10 Risk Indicators (What the AI is looking at)",
-                            labels={'x': 'Relative Importance', 'y': 'Feature'})
-        st.plotly_chart(fig_drivers, use_container_width=True)
+            country_risk = df.groupby("country")["class"].mean().sort_values(ascending=False).reset_index()
+            st.plotly_chart(px.bar(
+                country_risk,
+                x="country",
+                y="class",
+                title="Average Risk Level by Country",
+                labels={"class": "Average Risk (0-1)"}
+            ), use_container_width=True)
 
-    # --- SECTION 3: INTERACTIVE PREDICTION ---
-    st.markdown("---")
-    st.subheader("🎯 Test a Transaction Scenario")
-    st.write("Adjust parameters to see how the model calculates risk score.")
-    
-    test_col1, test_col2, test_col3 = st.columns(3)
-    p_val = test_col1.number_input("Purchase Amount ($)", 1, 1000, 50)
-    velocity = test_col2.slider("Transactions in Last 24h", 1, 50, 1)
-    age = test_col3.slider("User Account Age (Days)", 0, 365, 30)
-    
-    # Simple probability logic for simulation (stakeholder interaction)
-    risk_score = min(99, (p_val / 10) + (velocity * 5) - (age / 10))
-    st.progress(risk_score / 100)
-    st.write(f"Calculated Risk Probability: **{risk_score:.1f}%**")
+            st.plotly_chart(px.histogram(
+                df,
+                x="transactions_per_user",
+                color=df["class"].map({0: "Safe", 1: "Risky"}),
+                nbins=30,
+                title="How Active Users Are",
+                labels={"transactions_per_user": "Transactions per User"}
+            ), use_container_width=True)
+
+            st.plotly_chart(px.box(
+                df,
+                x="hour_of_day",
+                y="class",
+                title="Risky Transactions by Hour of Day",
+                labels={"class": "Risk (0=Safe,1=Risky)", "hour_of_day": "Hour of Day"}
+            ), use_container_width=True)
+
+            st.plotly_chart(px.box(
+                df,
+                x="day_of_week",
+                y="class",
+                title="Risky Transactions by Day of Week",
+                labels={"day_of_week": "Day of Week", "class": "Risk (0=Safe,1=Risky)"}
+            ), use_container_width=True)
+
+            st.plotly_chart(px.box(
+                df,
+                x="class",
+                y="transactions_last_24h",
+                title="Transactions in Last 24 Hours vs Risk",
+                labels={"transactions_last_24h": "Transactions in Last 24h", "class": "Transaction Type"}
+            ), use_container_width=True)
+
+            st.plotly_chart(px.scatter(
+                df,
+                x="age",
+                y="purchase_value",
+                color=df["class"].map({0: "Safe", 1: "Risky"}),
+                title="Purchase Amount vs Account Age",
+                labels={"age": "User Account Age (days)", "purchase_value": "Transaction Amount"}
+            ), use_container_width=True)
+
+            browser_risk = df.groupby("browser")["class"].mean().sort_values(ascending=False).reset_index()
+            st.plotly_chart(px.bar(
+                browser_risk,
+                x="browser",
+                y="class",
+                title="Average Risk by Browser",
+                labels={"class": "Average Risk (0-1)"}
+            ), use_container_width=True)
+
+            source_risk = df.groupby("source")["class"].mean().sort_values(ascending=False).reset_index()
+            st.plotly_chart(px.bar(
+                source_risk,
+                x="source",
+                y="class",
+                title="Average Risk by Source",
+                labels={"class": "Average Risk (0-1)"}
+            ), use_container_width=True)
+
+        # =============================
+        # MODEL PREDICTION
+        # =============================
+        with tab_model:
+            st.subheader("How the System Detects Risky Transactions")
+
+            config = PipelineConfig(
+                numeric_features=[
+                    "purchase_value", "age", "transactions_last_24h",
+                    "transactions_per_user", "hour_of_day",
+                    "day_of_week", "time_since_signup"
+                ],
+                categorical_features=["source", "browser", "country"]
+            )
+
+            pipeline = ModelingPipeline(df, config)
+            pipeline.prepare_data()
+
+            with st.spinner("Training model…"):
+                lr_model = pipeline.tune_and_train_logistic_regression()
+                rf_model = pipeline.train_random_forest()
+                xgb_model = pipeline.train_xgboost()
+                lgb_model = pipeline.train_lightgbm()
+                best_model, best_name = (rf_model, "Random Forest")
+
+            st.write(f"✅ Recommended model: **{best_name}**")
+            st.write("This model predicts whether a transaction might be risky using simple patterns from transaction history, time, and user info.")
+
+            # Performance comparison plot
+            st.subheader("Compare Models in Simple Terms")
+            df_preds = df.copy()
+            X_all = pipeline.preprocessor.transform(df)
+            df_preds["LR_prob"] = lr_model.predict_proba(X_all)[:, 1]
+            df_preds["RF_prob"] = rf_model.predict_proba(X_all)[:, 1]
+            df_preds["XGB_prob"] = xgb_model.predict_proba(X_all)[:, 1]
+            df_preds["LGB_prob"] = lgb_model.predict_proba(X_all)[:, 1]
+            df_preds["LR_pred"] = (df_preds["LR_prob"] > 0.5).astype(int)
+            df_preds["RF_pred"] = (df_preds["RF_prob"] > 0.5).astype(int)
+            df_preds["XGB_pred"] = (df_preds["XGB_prob"] > 0.5).astype(int)
+            df_preds["LGB_pred"] = (df_preds["LGB_prob"] > 0.5).astype(int)
+
+            model_perf = pd.DataFrame({
+                "Model": ["Logistic Regression", "Random Forest", "XGBoost", "LightGBM"],
+                "Risky Transactions Detected (%)": [
+                    df_preds[df_preds["class"]==1]["LR_pred"].mean(),
+                    df_preds[df_preds["class"]==1]["RF_pred"].mean(),
+                    df_preds[df_preds["class"]==1]["XGB_pred"].mean(),
+                    df_preds[df_preds["class"]==1]["LGB_pred"].mean()
+                ]
+            })
+
+            st.plotly_chart(px.bar(
+                model_perf,
+                x="Model",
+                y="Risky Transactions Detected (%)",
+                text=model_perf["Risky Transactions Detected (%)"].apply(lambda x: f"{x:.1%}"),
+                title="How Well Models Detect Risky Transactions",
+                labels={"Risky Transactions Detected (%)":"Detected Risky %"}
+            ), use_container_width=True)
+
+            st.subheader("Check a Specific Transaction")
+            idx = st.slider("Pick a transaction to check:", 0, len(df) - 1, 0)
+            sample = df.iloc[[idx]]
+            X_sample = pipeline.preprocessor.transform(sample)
+            fraud_prob = best_model.predict_proba(X_sample)[0][1]
+
+            st.metric("Estimated Risk", f"{fraud_prob:.1%}")
+            if fraud_prob > 0.5:
+                st.warning("🚨 This transaction is risky. Consider blocking it.")
+            else:
+                st.success("✅ This transaction looks safe.")
+
+            st.write(sample.T)
+
+        # =============================
+        # EXPLAINABILITY
+        # =============================
+        with tab_explain:
+            st.subheader("Why the Model Makes Predictions")
+
+            X_processed = pipeline.preprocessor.transform(df)
+            if hasattr(X_processed, "toarray"):
+                X_processed = X_processed.toarray()
+            feature_names = pipeline.preprocessor.get_feature_names_out()
+            X_df = pd.DataFrame(X_processed, columns=feature_names)
+
+            sample_size = min(200, X_df.shape[0])
+            X_shap = X_df.sample(sample_size, random_state=42)
+
+            explainer = shap.TreeExplainer(best_model)
+            shap_values_raw = explainer.shap_values(X_shap)
+
+            if isinstance(shap_values_raw, list):
+                shap_values = shap_values_raw[1]
+            else:
+                shap_values = shap_values_raw
+            if shap_values.ndim == 3:
+                shap_values = shap_values[:, :, 1]
+
+            # -----------------------------
+            # Interactive SHAP Beeswarm with Plotly
+            # -----------------------------
+            st.subheader("Overall Feature Impact (Interactive)")
+            shap_df = pd.DataFrame(shap_values, columns=feature_names)
+            shap_df["sample_id"] = np.arange(shap_df.shape[0])
+            shap_long = shap_df.melt(id_vars="sample_id", var_name="feature", value_name="impact")
+
+            fig = px.scatter(
+                shap_long, x="impact", y="feature", color="impact", 
+                hover_data=["sample_id"], title="SHAP Feature Impact (Beeswarm Style)",
+                color_continuous_scale="RdBu", width=900, height=600
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+            # -----------------------------
+            # Local Explanation
+            # -----------------------------
+            st.subheader("Why This Transaction is Risky")
+            idx_local = st.slider("Pick a transaction for explanation:", 0, len(df)-1, idx)
+            X_single = X_df.iloc[[idx_local]]
+            single_shap_raw = explainer.shap_values(X_single)
+
+            if isinstance(single_shap_raw, list):
+                single_shap = single_shap_raw[1]
+            else:
+                single_shap = single_shap_raw
+            if single_shap.ndim == 3:
+                single_shap = single_shap[:, :, 1]
+            single_shap_flat = single_shap.flatten()
+
+            single_df = pd.DataFrame({
+                "feature": feature_names,
+                "impact": single_shap_flat
+            })
+            single_df["abs_impact"] = single_df["impact"].abs()
+            single_df = single_df.sort_values("abs_impact", ascending=False).head(10)
+
+            st.plotly_chart(px.bar(
+                single_df, 
+                x="impact", 
+                y="feature", 
+                orientation="h",
+                title=f"Top Factors for Transaction #{idx_local}",
+                color="impact",
+                color_continuous_scale="RdBu"
+            ), use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Something went wrong: {e}")
+
+    finally:
+        if "txn_path" in locals() and os.path.exists(txn_path):
+            os.remove(txn_path)
+        if "ip_path" in locals() and os.path.exists(ip_path):
+            os.remove(ip_path)
 
 else:
-    st.info("👋 Welcome! Please upload your transaction CSV to generate the fraud report.")
+    st.info("Please upload both transaction and IP data to start exploring.")
