@@ -19,7 +19,12 @@ RANDOM_STATE = 42
 VALID_CASE_TYPES = {"TP", "FP", "FN"}
 
 # Ensure JavaScript is initialized for SHAP plots in Notebooks
-shap.initjs()
+try:
+    import IPython
+    shap.initjs()
+except ImportError:
+    pass  # Skip initjs outside Jupyter/notebook
+
 
 # ----------------------------
 # Centralized logging
