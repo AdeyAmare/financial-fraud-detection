@@ -1,73 +1,64 @@
-# `src/data` – Data Loading and Cleaning Utilities
+# `src/data` – Data Loading, Cleaning, and Geolocation Utilities
 
-This folder contains Python modules for **loading, cleaning, and merging transaction datasets**, including fraud and credit card data.
+This module folder provides reusable Python classes and functions for **loading, cleaning, and merging transactional datasets**, specifically designed for fraud detection tasks in e-commerce and banking contexts. It supports both raw fraud transaction datasets and credit card datasets, and includes IP-to-country geolocation enrichment.
 
-## Modules
+All components are designed for modular ETL pipelines, ensuring reproducibility, maintainability, and easy integration with modeling workflows.
 
-### 1. `loader.py`
-Provides classes to load different datasets into pandas DataFrames:
+---
 
-- **`FraudDataLoader`**
-  - Loads raw fraud transaction CSVs.
-  - Ensures required columns `signup_time` and `purchase_time` exist.
-  - Converts date columns to datetime objects.
-  
-- **`CreditCardDataLoader`**
-  - Loads credit card transaction CSVs.
-  - Simple wrapper around `pandas.read_csv`.
+## Modules Overview
 
-- **`IPCountryLoader`**
-  - Loads IP-to-country mapping CSVs.
-  - Ensures required columns: `lower_bound_ip_address`, `upper_bound_ip_address`, `country`.
+### `loader.py`
 
-**Usage Example:**
-    
+This module contains dataset loaders that standardize the process of reading CSV files and converting them into clean pandas DataFrames. Each loader validates required columns and performs minimal preprocessing to prepare the data for downstream processing.
+
+`FraudDataLoader` focuses on e-commerce transaction data. It ensures that critical columns such as `signup_time` and `purchase_time` exist and converts them to datetime objects to facilitate time-based feature engineering.
+
+`CreditCardDataLoader` loads bank credit card transaction data. It provides a simple wrapper around `pandas.read_csv` while ensuring type consistency for numeric and categorical columns.
+
+`IPCountryLoader` loads IP-to-country mapping datasets. It validates that the CSV contains `lower_bound_ip_address`, `upper_bound_ip_address`, and `country`. These mappings are later used for geolocation enrichment.
+
+Usage example:
+
 ```python
-    from src.data.loader import FraudDataLoader
+from src.data.loader import FraudDataLoader, IPCountryLoader
 
-    loader = FraudDataLoader("data/raw/Fraud_Data.csv")
-    df = loader.load()
+fraud_loader = FraudDataLoader("data/raw/Fraud_Data.csv")
+fraud_df = fraud_loader.load()
+
+ip_loader = IPCountryLoader("data/raw/IpAddress_to_Country.csv")
+ip_df = ip_loader.load()
 ```
 
-### 2. `cleaner.py`
+---
 
-Provides the **`TransactionDataCleaner`** class for cleaning transactional datasets:
+### `cleaner.py`
 
-* Reports dataset statistics: shape, dtypes, duplicates, missing values.
-* Removes duplicate rows.
-* Handles missing values with multiple strategies:
+This module provides the `TransactionDataCleaner` class for robust cleaning of transactional datasets. It combines reporting, type correction, duplicate removal, and missing value handling in a single, reproducible pipeline.
 
-  * `drop` – drop rows with missing values
-  * `fill_zero` – fill missing values with 0
-  * `fill_median` – fill numeric columns with median
-* Corrects data types (e.g., ensures `age` is integer).
-* Offers a full `clean()` pipeline combining all steps.
+The cleaner can generate detailed reports about dataset shape, data types, missing values, and duplicates. Missing values can be handled using several strategies, including dropping rows, filling with zeros, or filling numeric columns with the median value. Data types are also corrected, for example converting `age` to integer or ensuring timestamps are datetime objects.
 
-**Usage Example:**
+The `clean()` method executes all cleaning steps in sequence, allowing easy integration into preprocessing pipelines for modeling.
+
+Usage example:
 
 ```python
 from src.data.cleaner import TransactionDataCleaner
 
-cleaner = TransactionDataCleaner(df)
+cleaner = TransactionDataCleaner(fraud_df)
 cleaner.report()
-df_clean = cleaner.clean(missing_strategy="fill_median")
+fraud_df_cleaned = cleaner.clean(missing_strategy="fill_median")
 ```
 
-### 3. `merger.py`
+---
 
-Provides the **`GeoDataMerger`** class for IP-to-country geolocation enrichment:
+### `merger.py`
 
-* Converts IP addresses to integers for range comparison.
-* Prepares and sorts IP ranges from mapping data.
-* Merges transaction data with IP ranges using `merge_asof`.
-* Assigns "Unknown" for unmapped or invalid IPs.
-* Computes country-level fraud statistics:
+The `GeoDataMerger` class enriches transaction datasets with geolocation information based on IP-to-country mappings. It converts IP addresses to integer format for range-based joins, sorts IP ranges, and performs a `merge_asof` to efficiently map IP addresses to countries.
 
-  * `total_transactions`
-  * `fraud_count`
-  * `fraud_rate`
+Transactions with unmapped or invalid IPs are assigned "Unknown" to ensure completeness. The module can compute country-level fraud statistics, including total transactions, number of frauds, and fraud rates, which are essential for exploratory analysis and reporting.
 
-**Usage Example:**
+Usage example:
 
 ```python
 from src.data.loader import FraudDataLoader, IPCountryLoader
@@ -78,15 +69,17 @@ ip_df = IPCountryLoader("data/raw/IpAddress_to_Country.csv").load()
 
 merger = GeoDataMerger(fraud_df, ip_df)
 fraud_df_geo = merger.merge_country()
-summary = merger.get_summary()
+summary_stats = merger.get_summary()
 ```
 
 ---
 
-## Notes
+## Best Practices
 
-* All loaders validate the existence of the file and required columns.
-* The cleaner is designed to handle typical transaction dataset issues, but can be extended for custom transformations.
-* The merger assumes numeric or string IP addresses in standard IPv4 format.
-* Designed for **reproducible, modular ETL pipelines** in fraud detection projects.
+All loaders, cleaners, and mergers are designed to be modular, allowing them to be integrated into larger pipelines for feature engineering, modeling, and evaluation.
 
+Loaders always validate input files and required columns. The cleaner provides configurable missing value handling strategies and type corrections. The merger is optimized for large datasets, using integer-based IP joins to handle millions of transactions efficiently.
+
+This structure ensures that ETL operations in fraud detection projects are **reproducible, transparent, and production-ready**, with minimal manual intervention.
+
+---

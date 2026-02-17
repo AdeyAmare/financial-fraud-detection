@@ -81,7 +81,7 @@ financial-fraud-detection/
 
 The Streamlit dashboard allows stakeholders to upload transaction data, review fraud trends, compare model outputs, inspect individual transaction scores, and view SHAP-based explanations. This interface presents all insights without technical jargon, making it accessible to risk management and business teams.
 
-[https://financial-fraud-detection-dashboard-123.streamlit.app/](https://financial-fraud-detection-dashboard-123.streamlit.app/)
+[Demo Video](https://streamable.com/vd115n)
 
 ---
 
