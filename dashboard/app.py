@@ -257,15 +257,12 @@ if uploaded_txn and uploaded_ip:
         with tab_explain:
             st.subheader("Why the Model Makes Predictions")
 
-            X_processed = pipeline.preprocessor.transform(df)
-            if hasattr(X_processed, "toarray"):
-                X_processed = X_processed.toarray()
             feature_names = pipeline.preprocessor.get_feature_names_out()
-            X_df = pd.DataFrame(X_processed, columns=feature_names)
+            sample_size = min(200, len(df))
+            df_sample = df.sample(sample_size, random_state=42)
 
-            sample_size = min(200, X_df.shape[0])
-            X_shap = X_df.sample(sample_size, random_state=42)
-
+            # Keep sparse to save memory
+            X_shap = pipeline.preprocessor.transform(df_sample)
             explainer = shap.TreeExplainer(best_model)
             shap_values_raw = explainer.shap_values(X_shap)
 
@@ -285,7 +282,7 @@ if uploaded_txn and uploaded_ip:
             shap_long = shap_df.melt(id_vars="sample_id", var_name="feature", value_name="impact")
 
             fig = px.scatter(
-                shap_long, x="impact", y="feature", color="impact", 
+                shap_long, x="impact", y="feature", color="impact",
                 hover_data=["sample_id"], title="SHAP Feature Impact (Beeswarm Style)",
                 color_continuous_scale="RdBu", width=900, height=600
             )
@@ -296,7 +293,7 @@ if uploaded_txn and uploaded_ip:
             # -----------------------------
             st.subheader("Why This Transaction is Risky")
             idx_local = st.slider("Pick a transaction for explanation:", 0, len(df)-1, idx)
-            X_single = X_df.iloc[[idx_local]]
+            X_single = pipeline.preprocessor.transform(df.iloc[[idx_local]])
             single_shap_raw = explainer.shap_values(X_single)
 
             if isinstance(single_shap_raw, list):
@@ -315,9 +312,9 @@ if uploaded_txn and uploaded_ip:
             single_df = single_df.sort_values("abs_impact", ascending=False).head(10)
 
             st.plotly_chart(px.bar(
-                single_df, 
-                x="impact", 
-                y="feature", 
+                single_df,
+                x="impact",
+                y="feature",
                 orientation="h",
                 title=f"Top Factors for Transaction #{idx_local}",
                 color="impact",
