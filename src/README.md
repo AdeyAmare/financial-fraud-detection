@@ -1,48 +1,45 @@
 # `src` – Source Code for Fraud Detection Project
 
-This folder contains all source code for the fraud detection project, including **data loading and cleaning, geolocation merging, feature engineering, data transformation, and modeling pipelines**.
+This folder contains the core Python modules for the fraud detection project, including data loading, cleaning, geolocation merging, feature engineering, transformation, imbalance handling, modeling pipelines, and explainability. The code is structured for reproducible ETL workflows, modular experimentation, and production deployment.
+
+---
 
 ## Folder Structure
 
 ```
-
 src/
-├── data/                     # Data loaders, cleaners, and merger utilities
+├── data/                                # Loaders, cleaners, and geolocation merger utilities
 │   ├── loader.py
 │   ├── cleaner.py
 │   └── merger.py
-├── feature_engineering.py     # Temporal and behavioral feature engineering
-├── transformation_and_imbalance.py  # Feature transformation, scaling, encoding, SMOTE
-├── modeling.py       # Modeling pipeline with Logistic Regression & Random Forest
+├── feature_engineering.py               # Temporal and behavioral feature engineering
+├── transformation_and_imbalance.py      # Feature scaling, encoding, and SMOTE handling
+├── modeling.py                          # Modeling pipeline for classification and evaluation
+├── explainability.py                     # SHAP-based global and local explainability
 └── utils/
-└── io_utils.py           # Data I/O utilities (CSV save)
-
+    └── io_utils.py                      # Safe CSV I/O utilities
 ```
-
-## 1️⃣ Data Utilities (`src/data`)
-
-Contains **loaders, cleaners, and merger utilities** for fraud and credit card datasets.
-
-For detailed documentation, see: [src/data README](./data/README.md)
-
-**Highlights:**
-- `FraudDataLoader`, `CreditCardDataLoader`, `IPCountryLoader` – CSV loaders with validation
-- `TransactionDataCleaner` – Remove duplicates, handle missing values, correct data types
-- `GeoDataMerger` – Merge IP address ranges with transactions and compute country-level fraud statistics
 
 ---
 
-## 2️⃣ Feature Engineering (`feature_engineering.py`)
+## 1. Data Utilities (`src/data`)
 
-Provides the **`FraudFeatureEngineer`** class for creating temporal and behavioral features:
+This folder contains reusable classes for loading, cleaning, and enriching transactional datasets. It supports both e-commerce fraud transactions and bank credit card datasets.
 
-- `parse_timestamps()` – Convert signup and purchase times to datetime
-- `add_time_features()` – Extract `hour_of_day` and `day_of_week`
-- `add_time_since_signup()` – Compute hours since signup
-- `add_transaction_velocity()` – Calculate per-user total transactions and 24h rolling counts
-- `get_features()` – Return the feature-enhanced DataFrame
+The `FraudDataLoader`, `CreditCardDataLoader`, and `IPCountryLoader` classes standardize CSV ingestion and ensure validation of required columns. The `TransactionDataCleaner` class handles duplicates, missing values, and type corrections in a reproducible pipeline. The `GeoDataMerger` class enables IP-to-country enrichment, efficiently mapping IP ranges and computing country-level fraud statistics.
 
-**Usage Example:**
+Refer to the [data README](./data/README.md) for complete details and usage examples.
+
+---
+
+## 2. Feature Engineering (`feature_engineering.py`)
+
+The `FraudFeatureEngineer` class is responsible for creating temporal and behavioral features that capture patterns indicative of fraud. This includes parsing timestamps, adding hour-of-day and day-of-week features, computing the time elapsed since account signup, and calculating transaction velocity for each user.
+
+This module allows chaining of methods to build a feature-rich DataFrame ready for model input. It is designed for modular use in notebooks and production pipelines.
+
+Usage Example:
+
 ```python
 from src.feature_engineering import FraudFeatureEngineer
 
@@ -53,16 +50,13 @@ features_df = engineer.get_features()
 
 ---
 
-## 3️⃣ Transformation & Imbalance (`transformation_and_imbalance.py`)
+## 3. Transformation and Imbalance Handling (`transformation_and_imbalance.py`)
 
-Provides **`FraudDataTransformer`** to prepare data for modeling:
+`FraudDataTransformer` prepares datasets for machine learning. It handles train-test splitting with stratification to preserve class distribution, numeric feature scaling, categorical feature encoding, and oversampling of minority classes using SMOTE.
 
-* `split_data()` – Stratified train/test split
-* `transform_features()` – Standard scale numeric, one-hot encode categorical features
-* `handle_imbalance()` – Apply SMOTE to training data
-* `get_train_test()` – Retrieve processed training and test sets
+The module ensures that all transformations are applied consistently and can return processed training and testing sets ready for modeling. This approach isolates data preparation from modeling logic, promoting reproducibility and reducing leakage risks.
 
-**Usage Example:**
+Usage Example:
 
 ```python
 from src.transformation_and_imbalance import FraudDataTransformer
@@ -74,20 +68,16 @@ X_train, X_test, y_train, y_test = transformer.get_train_test()
 
 ---
 
-## 4️⃣ Modeling Pipeline (`modeling.py`)
+## 4. Modeling Pipeline (`modeling.py`)
 
-Provides the **`ModelingPipeline`** class for training, evaluating, and comparing classification models:
+`ModelingPipeline` provides end-to-end model training, evaluation, and comparison. It supports Logistic Regression and Random Forest models, with optional SMOTE oversampling. Preprocessing steps such as scaling and encoding are integrated to ensure consistency.
 
-* Supports **Logistic Regression** and **Random Forest**.
-* Optional **SMOTE** oversampling to handle class imbalance.
-* Handles **preprocessing** (standard scaling numeric features, one-hot encoding categorical features).
-* **Cross-validation** (Stratified K-Fold) with metrics: F1, AUC-PR, precision, recall, confusion matrix.
-* Methods for **comparing models** and **selecting the best model** based on evaluation metrics.
+The module implements cross-validation using Stratified K-Fold, reporting metrics including F1-score, precision, recall, AUC-PR, and confusion matrix. It also provides utilities to compare models and select the best-performing model based on both statistical metrics and business considerations.
 
-**Usage Example:**
+Usage Example:
 
 ```python
-from src.modeling_pipeline import ModelingPipeline
+from src.modeling import ModelingPipeline
 
 numeric_cols = ["Time", "Amount"]
 categorical_cols = []
@@ -102,51 +92,13 @@ best_model, justification = pipeline.select_best_model()
 
 ---
 
-## 5️⃣ Utilities (`src/utils`)
+## 5. Model Explainability (`explainability.py`)
 
-Provides helper functions for **data input/output**:
+The `ModelExplainability` class leverages SHAP (SHapley Additive exPlanations) for both global and local interpretability of fraud detection models. It is compatible with saved models and preprocessors, enabling post-hoc explainability without retraining.
 
-* `save_dataframe(df, path, index=False)` – Save DataFrame to CSV safely, creating directories if needed
+Global explainability identifies the most influential features across the dataset, while local explanations visualize why individual transactions were classified as fraud or legitimate. Special handling is included for true positives, false positives, and false negatives. SHAP outputs, combined with built-in model importance, support business insights and operational decisions.
 
-For detailed documentation, see: [src/utils README](./utils/README.md)
-
-**Usage Example:**
-
-```python
-from src.utils.io_utils import save_dataframe
-
-save_dataframe(features_df, "data/processed/fraud_data_with_features.csv")
-```
-
----
-
-## 6️⃣ Model Explainability (`explainability.py`)
-
-Provides the **`ModelExplainability`** class for interpreting trained fraud detection models using **SHAP (SHapley Additive exPlanations)**.
-
-This module is designed to work with **saved models and preprocessors**, enabling post-hoc explainability in separate notebooks without retraining.
-
-### Key Capabilities
-
-* **Built-in Feature Importance**
-  - Visualizes top features using model-native importance (e.g., Random Forest).
-
-* **Global Explainability (SHAP Summary Plot)**
-  - Identifies which features most influence fraud predictions across the dataset.
-  - Supports both tree-based and model-agnostic SHAP explainers.
-
-* **Local Explainability (SHAP Force Plots)**
-  - Generates instance-level explanations for:
-    - **True Positives (TP)** – correctly identified fraud
-    - **False Positives (FP)** – legitimate transactions flagged as fraud
-    - **False Negatives (FN)** – missed fraud cases
-  - Handles common SHAP dimension mismatches safely.
-
-* **Top Fraud Drivers**
-  - Extracts the most influential features using **mean absolute SHAP values**.
-  - Useful for business interpretation and risk policy recommendations.
-
-### Usage Example
+Usage Example:
 
 ```python
 from src.explainability import ModelExplainability
@@ -158,33 +110,32 @@ explainer = ModelExplainability(
     y=y_test
 )
 
-# Built-in feature importance
 explainer.plot_builtin_feature_importance(top_n=10)
-
-# Global SHAP summary
 explainer.plot_shap_summary()
-
-# Local explanations
 explainer.plot_force_plot_for_case("TP")
 explainer.plot_force_plot_for_case("FP")
 explainer.plot_force_plot_for_case("FN")
-
-# Top fraud drivers
 top_features = explainer.get_top_drivers(top_n=5)
 ```
+
 ---
 
-## Notes
+## 6. Utilities (`src/utils`)
 
-* All modules use **logging** to track progress and issues.
-* Designed for modular, reproducible ETL, feature, and modeling pipelines.
-* Follow the **notebook workflow** in order:
+`io_utils.py` provides safe data input/output operations, such as saving DataFrames to CSV. It ensures that directories exist before writing and prevents accidental overwrites.
 
-  1. Data loading & cleaning
-  2. Geolocation enrichment
-  3. Feature engineering
-  4. Data transformation & imbalance handling
-  5. Model training, evaluation, and selection
-* Output datasets and trained models are ready for **machine learning workflows**.
+Usage Example:
 
+```python
+from src.utils.io_utils import save_dataframe
 
+save_dataframe(features_df, "data/processed/fraud_data_with_features.csv")
+```
+
+---
+
+## Notes and Best Practices
+
+All modules use logging to track processing steps and potential issues. The workflow is designed to follow a **modular and reproducible pipeline**: load and clean data, enrich with geolocation, engineer features, transform and balance the dataset, train and evaluate models, and finally interpret predictions.
+
+This structure ensures that outputs, including transformed datasets and trained models, are immediately ready for integration into **production ML workflows**, dashboards, or downstream analytics.

@@ -1,153 +1,83 @@
 # Fraud Detection Notebooks – Project Overview
 
-This collection of notebooks provides an end-to-end workflow for **fraud detection** using transactional data. The workflow covers raw data exploration, cleaning, geolocation enrichment, feature engineering, data transformation, and modeling for machine learning.
+This collection of notebooks provides a complete workflow for fraud detection using e-commerce and credit card transaction data. It covers raw data exploration, cleaning, geolocation enrichment, feature engineering, transformation and imbalance handling, model training, evaluation, and explainability. Each notebook is designed to produce reproducible outputs suitable for downstream modeling, analysis, and stakeholder reporting.
+
+---
 
 ## Notebook Workflow
 
-1. **EDA – Initial Exploration**
-   - Load raw fraud or credit card transaction data.
-   - Perform initial data quality checks and cleaning (handling missing values, outliers).
-   - Conduct univariate and bivariate analysis on key features like purchase value, age, devices, and temporal patterns.
-   - Analyze class distribution of fraud vs. legitimate transactions.
-   - Save cleaned datasets for downstream processing.
+The workflow is structured to follow a logical progression from raw data to deployable machine learning models.
 
-2. **Geolocation Enrichment**
-   - Merge fraud transactions with IP-to-country mappings.
-   - Validate IP formats and coverage of the mapping dataset.
-   - Analyze country-level fraud patterns, including transaction counts and fraud rates.
-   - Visualize top countries by fraud rate and transaction volume.
-   - Save the geolocation-enriched dataset for feature engineering.
+### EDA – Initial Exploration
 
-3. **Feature Engineering**
-   - Derive behavioral and temporal features:
-     - Hour of day, day of week
-     - Time since signup
-     - Transaction velocity (per user, last 24h)
-   - Explore relationships between features and fraud risk using plots and correlation analysis.
-   - Visualize fraud trends over time (hourly, daily, weekly).
-   - Save the feature-enhanced dataset for modeling.
+The first step involves loading raw fraud or credit card transaction data and performing initial quality checks. This includes handling missing values, removing duplicates, and inspecting outliers. Univariate and bivariate analyses are conducted on features such as purchase amount, user age, device usage, and temporal patterns. Class distribution of fraud versus legitimate transactions is quantified. Cleaned datasets are saved for further processing.
 
-4. **Data Transformation & Imbalance Handling**
-   - Split feature-engineered data into training and test sets.
-   - Transform numeric and categorical features as required for modeling.
-   - Handle class imbalance in the training set using SMOTE.
-   - Visualize the effect of resampling on class distribution.
-   - Save the transformed and balanced training dataset for model development.
+### Geolocation Enrichment
 
-5. **Modeling**
-   - Train and evaluate classification models using:
-     - Logistic Regression
-     - Random Forest
-   - Perform cross-validation and evaluate metrics such as F1, precision, recall, AUC-PR, and confusion matrix.
-   - Compare model performance and select the best model for fraud detection.
-   - Notebooks:
-     - `modeling_credit_card_data.ipynb` – Modeling workflow for credit card transactions
-     - `modeling_fraud_data.ipynb` – Modeling workflow for fraud transactions
+Fraud transactions are enriched with country-level information using IP-to-country mapping. The notebooks validate IP formats and coverage, ensuring robust merges. Country-level fraud statistics are computed, including total transactions, fraud counts, and fraud rates. Top countries by transaction volume and fraud prevalence are visualized. The resulting geolocation-enriched dataset is saved for feature engineering.
+
+### Feature Engineering
+
+Behavioral and temporal features are derived to enhance predictive power. Hour of the day, day of the week, time since signup, and transaction velocity over the last 24 hours are added. Relationships between features and fraud risk are visualized and analyzed, including correlation analysis and temporal fraud trends. The feature-enhanced dataset is saved for modeling.
+
+### Data Transformation and Imbalance Handling
+
+Feature-engineered data is split into training and test sets using stratified sampling to preserve class distributions. Numeric and categorical features are transformed appropriately for model consumption. Class imbalance is addressed using SMOTE on the training set. The effects of resampling on class distribution are visualized and documented. Transformed and balanced training datasets are saved for model development.
+
+### Modeling
+
+Classification models are trained and evaluated on the prepared datasets. Logistic Regression provides an interpretable baseline, while Random Forest captures complex patterns in fraud behavior. Cross-validation with Stratified K-Fold is used to report F1-score, precision, recall, AUC-PR, and confusion matrices. Model comparisons inform selection of the best-performing classifier for both e-commerce and credit card fraud detection. Specific modeling notebooks include `credit_data_modeling.ipynb` for credit card transactions and `fraud_data_modeling.ipynb` for e-commerce transactions.
 
 ---
 
-6. **Model Explainability & Interpretation**
+## Model Explainability and Interpretation
 
-This stage focuses on **interpreting model predictions** to understand *why* transactions are classified as fraudulent or legitimate.  
-It uses **SHAP (SHapley Additive exPlanations)** to provide both **global** and **local** model insights.
+Model explainability focuses on understanding why transactions are flagged as fraudulent or legitimate, supporting transparency and actionable insights. SHAP (SHapley Additive exPlanations) is used for both global and local interpretability.
 
 ### Objectives
 
-- Identify which features most strongly influence fraud predictions.
-- Explain individual fraud decisions for transparency and trust.
-- Analyze model behavior on:
-  - Correct fraud detections
-  - False alarms
-  - Missed fraud cases
-- Translate model outputs into **actionable business insights**.
+The explainability step identifies features that strongly influence model predictions, explains individual transaction decisions, and highlights areas where models may over-flag or miss fraud. The analysis provides insights into correct fraud detection, false positives, and false negatives.
 
 ### Explainability Workflow
 
-1. **Load Trained Artifacts**
-   - Load the saved best-performing model.
-   - Load the corresponding preprocessing pipeline.
-   - Apply preprocessing to the test dataset only.
+Trained models and preprocessors are loaded and applied to the test dataset. Global interpretation includes plotting built-in feature importance and generating SHAP summary plots to visualize feature influence across the dataset. Local interpretation uses SHAP force plots to explain individual transactions, focusing on true positives, false positives, and false negatives. The most influential features are extracted using mean absolute SHAP values, providing a ranked list of top fraud drivers. These outputs enable risk teams and business stakeholders to understand model behavior and inform operational decisions.
 
-2. **Global Model Interpretation**
-   - Plot **built-in feature importance** (for tree-based models).
-   - Generate a **SHAP summary plot** to show overall feature impact.
-   - Identify dominant behavioral, temporal, and transaction-related drivers of fraud risk.
+### Notebooks
 
-3. **Local Prediction Explanations**
-   - Generate **SHAP force plots** for individual cases:
-     - **True Positive (TP):** Correctly detected fraud
-     - **False Positive (FP):** Legitimate transaction flagged as fraud
-     - **False Negative (FN):** Fraud transaction missed by the model
-   - Analyze feature contributions for each decision.
-
-4. **Top Fraud Drivers**
-   - Extract the most influential features using **mean absolute SHAP values**.
-   - Compare model-driven risk factors with domain expectations.
-
-### Notebook
-
-- `explainability_fraud_data.ipynb` and `explainability_credit_data.ipynb`
-  - Loads trained models and preprocessors
-  - Produces SHAP summary plots and force plots
-  - Documents insights and business implications
+`explainability_fraud_data.ipynb` and `explainability_credit_data.ipynb` perform post-training analysis, produce SHAP visualizations, and document business-relevant insights.
 
 ### Key Outputs
 
-- Global SHAP summary plots (feature importance)
-- Instance-level SHAP force plots (decision explanations)
-- Ranked list of top fraud-driving features
-- Interpretability insights supporting model evaluation and deployment decisions
-
-### Design Notes
-
-- Explainability is performed **post-training** and does not affect model performance.
-- Uses defensive handling for SHAP dimensional edge cases.
-- Supports both:
-  - Tree-based models (Random Forest, Gradient Boosting)
-  - Linear / non-tree models (via model-agnostic SHAP)
-- Intended for **analysis, reporting, and stakeholder communication**.
+Global SHAP summary plots highlight features with the largest impact on fraud predictions. Instance-level SHAP force plots explain individual transaction decisions. A ranked list of top fraud drivers is generated to support interpretability and policy recommendations. This stage is performed post-training and does not affect model performance.
 
 ---
 
-
 ## Key Goals
 
-- Understand patterns in fraudulent and legitimate transactions.
-- Enrich data with geolocation for more granular risk analysis.
-- Create informative features that improve predictive modeling.
-- Prepare a clean, balanced dataset ready for machine learning.
-- Evaluate models to identify the most effective classifier.
+The notebook workflow is designed to provide a complete fraud detection solution. It enables understanding patterns in both fraudulent and legitimate transactions, enriches data with geolocation for finer-grained risk assessment, creates informative behavioral and temporal features, prepares balanced datasets for modeling, and evaluates classifiers to identify the most effective models.
 
-## Data Output
-
-- `fraud_data_cleaned.csv` – Cleaned raw data  
-- `fraud_data_with_country.csv` – Geolocation-enriched data  
-- `fraud_data_with_features.csv` – Feature-engineered dataset  
-- `fraud_train_smote.csv` – Transformed and SMOTE-balanced training dataset  
-- Model artifacts and evaluation results are stored as outputs from the modeling notebooks.
+---
 
 ## Usage
 
-1. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-````
+First, install project dependencies:
 
-2. **Run notebooks in order**:
+```bash
+pip install -r requirements.txt
+```
 
-   1. `eda_fraud_data.ipynb` and `eda_credit_card.ipynb` – Initial exploration and cleaning
-   2. `ipaddress_to_country.ipynb` – Merge country info
-   3. `feature_engineering.ipynb` – Create behavioral and temporal features
-   4. `data_transformation_imbalance_handling.ipynb` – Transform features, handle imbalance
-   5. `modeling_credit_card_data.ipynb` and `modeling_fraud_data.ipynb` – Train, evaluate, and select ML models
+Run notebooks in order:
 
-3. **Use the output datasets** for further machine learning or analysis.
+1. `eda_fraud_data.ipynb` and `eda_credit_card.ipynb` perform initial exploration and cleaning.
+2. `ipaddress_to_country.ipynb` merges country information with transactions.
+3. `feature_engineering.ipynb` adds behavioral and temporal features.
+4. `data_transformation_imbalance_handling.ipynb` transforms features and handles class imbalance.
+5. `credit_data_modeling.ipynb` and `fraud_data_modeling.ipynb` train, evaluate, and select ML models.
 
-4. **Adjust paths** in notebooks if your folder structure differs.
+Output datasets can be reused for further modeling, analysis, or integration into dashboards. Adjust notebook paths as needed to match your project folder structure.
+
+---
 
 ## Notes
 
-* All visualizations are intended for exploratory insight.
-* SMOTE is applied only to the training set to prevent data leakage.
-* Modeling notebooks rely on feature-engineered and transformed datasets.
-
+Visualizations are designed for exploratory and business insight. SMOTE oversampling is applied only to training sets to avoid data leakage. Modeling relies on feature-engineered and transformed datasets. SHAP explainability is performed post-training to ensure interpretability without affecting model predictions.
